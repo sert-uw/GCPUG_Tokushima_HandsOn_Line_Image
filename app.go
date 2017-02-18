@@ -31,7 +31,7 @@ const bucketURLBase = "https://storage.googleapis.com/"
 var botHandler *httphandler.WebhookHandler
 var bucketName string
 
-// GAEインスタンス起動時に行われる処理
+// 初期化処理
 func init() {
 	// line.envの読み込み
 	err := godotenv.Load("line.env")
