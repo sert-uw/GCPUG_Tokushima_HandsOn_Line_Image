@@ -31,18 +31,24 @@ const bucketURLBase = "https://storage.googleapis.com/"
 var botHandler *httphandler.WebhookHandler
 var bucketName string
 
+// GAEインスタンス起動時に行われる処理
 func init() {
+	// line.envの読み込み
 	err := godotenv.Load("line.env")
 	if err != nil {
 		panic(err)
 	}
+
+	// storage.envの読み込み
 	err = godotenv.Load("storage.env")
 	if err != nil {
 		panic(err)
 	}
 
+	// storage.envにあるBUCKET_NAMEの設定値を取得
 	bucketName = os.Getenv("BUCKET_NAME")
 
+	// lineのhttphandlerを設定
 	botHandler, err = httphandler.New(
 		os.Getenv("LINE_BOT_CHANNEL_SECRET"),
 		os.Getenv("LINE_BOT_CHANNEL_TOKEN"),
@@ -53,8 +59,9 @@ func init() {
 	http.HandleFunc("/task", handleTask)
 }
 
-// handleCallback is Webgook endpoint
+// Webhook の受付関数
 func handleCallback(evs []*linebot.Event, r *http.Request) {
+	// 受信したイベントの逐次処理
 	c := newContext(r)
 	ts := make([]*taskqueue.Task, len(evs))
 	for i, e := range evs {
@@ -70,7 +77,7 @@ func handleCallback(evs []*linebot.Event, r *http.Request) {
 	taskqueue.AddMulti(c, ts, "")
 }
 
-// handleTask is process event handler
+// 受信したメッセージへの返信処理
 func handleTask(w http.ResponseWriter, r *http.Request) {
 	c := newContext(r)
 	data := r.FormValue("data")
@@ -80,6 +87,7 @@ func handleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// メッセージJSONのパース
 	j, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
 		log.Errorf(c, "base64 DecodeString: %v", err)
@@ -93,6 +101,7 @@ func handleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// LINE bot 変数の生成
 	bot, err := newLINEBot(c)
 	if err != nil {
 		log.Errorf(c, "newLINEBot: %v", err)
@@ -102,11 +111,15 @@ func handleTask(w http.ResponseWriter, r *http.Request) {
 	log.Infof(c, "EventType: %s\nMessage: %#v", e.Type, e.Message)
 	var responseMessage linebot.Message
 
+	// 受信したメッセージのタイプチェック
 	switch message := e.Message.(type) {
+	// テキストメッセージの場合
 	case *linebot.TextMessage:
 		responseMessage = linebot.NewTextMessage(message.Text)
+
+	// 画像の場合
 	case *linebot.ImageMessage:
-		// 画像の取得
+		// 画像情報の取得
 		content, err := bot.GetMessageContent(message.ID).Do()
 		if err != nil {
 			log.Errorf(c, "Load error: %v", err)
@@ -135,19 +148,23 @@ func handleTask(w http.ResponseWriter, r *http.Request) {
 		writeError1 := writeImage(c, img, origPath)
 		writeError2 := writeImage(c, thumbnail, thumbnailPath)
 
+		// エラーチェック
 		if writeError1 == nil && writeError2 == nil {
+			// 画像メッセージの生成
 			origURL := bucketURLBase + bucketName + "/" + origPath
 			thumbnailURL := bucketURLBase + bucketName + "/" + thumbnailPath
 			responseMessage = linebot.NewImageMessage(origURL, thumbnailURL)
 		} else {
 			log.Errorf(c, "Write Error1: %v", writeError1)
 			log.Errorf(c, "Write Error2: %v", writeError2)
+			// テキストメッセージの生成
 			responseMessage = linebot.NewTextMessage("失敗しました。。。")
 		}
 	default:
 		responseMessage = linebot.NewTextMessage("未対応です。。。")
 	}
 
+	// 生成したメッセージを送信する
 	if _, err = bot.ReplyMessage(e.ReplyToken, responseMessage).WithContext(c).Do(); err != nil {
 		log.Errorf(c, "ReplayMessage: %v", err)
 		return
@@ -166,10 +183,12 @@ func newLINEBot(c context.Context) (*linebot.Client, error) {
 	)
 }
 
+// LINEのMessageContentからimage.Imageを生成する
 func decodeImage(content *linebot.MessageContentResponse) (image.Image, error) {
 	var img image.Image
 	var err error
 
+	// 画像のフォーマットで場合分け
 	if content.ContentType == "image/jpeg" {
 		img, err = jpeg.Decode(content.Content)
 	} else if content.ContentType == "image/png" {
@@ -179,9 +198,12 @@ func decodeImage(content *linebot.MessageContentResponse) (image.Image, error) {
 	return img, err
 }
 
+// 画像をグレースケール化する
 func convertToGray(img image.Image) image.Image {
 	bounds := img.Bounds()
+	// 空の画像を生成
 	dest := image.NewGray16(bounds)
+	// 元画像の各ピクセル値を取得し、グレースケール化する
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := color.Gray16Model.Convert(img.At(x, y))
@@ -192,12 +214,15 @@ func convertToGray(img image.Image) image.Image {
 	return dest
 }
 
+// 画像をCloud Storageへ書き込む
 func writeImage(c context.Context, img image.Image, path string) error {
+	// storageのclientを生成する
 	client, err := storage.NewClient(c)
 	if err != nil {
 		return err
 	}
 
+	// 画像をjpegのbyte配列へ変換する
 	buf := new(bytes.Buffer)
 	err = jpeg.Encode(buf, img, nil)
 	if err != nil {
@@ -207,7 +232,9 @@ func writeImage(c context.Context, img image.Image, path string) error {
 
 	// Writerの生成
 	writer := client.Bucket(bucketName).Object(path).NewWriter(c)
+	// 画像のフォーマットはjpegとする
 	writer.ContentType = "image/jpeg"
+	// Cloud Storageのアクセス権限を一般公開に設定する
 	writer.ObjectAttrs.ACL = []storage.ACLRule{
 		storage.ACLRule{
 			Entity: storage.AllUsers,
