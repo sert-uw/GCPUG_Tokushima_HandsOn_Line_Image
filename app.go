@@ -109,6 +109,23 @@ func handleTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Infof(c, "EventType: %s\nMessage: %#v", e.Type, e.Message)
+	//	log.Infof(c, "UserId: %s", e.Source.UserID)
+
+	//	botProfile, err := linebot.New(os.Getenv("LINE_BOT_CHANNEL_SECRET"),
+	//		os.Getenv("LINE_BOT_CHANNEL_TOKEN"))
+	//	if err != nil {
+	//		log.Errorf(c, "Error: %v", err)
+	//	}
+
+	//	res, err := botProfile.GetProfile(e.Source.UserID).Do()
+	//	if err != nil {
+	//		log.Errorf(c, "Error: %v", err)
+	//	}
+
+	//	log.Infof(c, "Name: %s", res.DisplayName)
+	//	log.Infof(c, "PictureURL: %s", res.PictureURL)
+	//	log.Infof(c, "StatusMessage: %s", res.StatusMessage)
+
 	var responseMessage linebot.Message
 
 	// 受信したメッセージのタイプチェック
